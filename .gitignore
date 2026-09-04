@@ -1,0 +1,4 @@
+config/secrets.local.yaml
+config/*.local.yaml
+.env
+.env.*
