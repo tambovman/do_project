@@ -2,12 +2,6 @@ pipeline {
     agent { label 'linux' }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Environment') {
             steps {
                 sh '''
