@@ -31,7 +31,32 @@ pipeline {
                 '''
             }
         }
-    }
+
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    set -e
+
+                    docker rm -f devops-demo-test 2>/dev/null || true
+
+                    cleanup() {
+                        docker logs devops-demo-test || true
+                        docker rm -f devops-demo-test || true
+                    }
+
+                    trap cleanup EXIT
+
+                    docker run -d \
+                    --name devops-demo-test \
+                    -p 18080:8080 \
+                    devops-demo:${BUILD_NUMBER}
+
+                    sleep 3
+
+                    curl -f http://127.0.0.1:18080/health
+                '''
+            }
+        }
 
     post {
         success {
