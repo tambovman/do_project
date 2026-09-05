@@ -32,9 +32,19 @@ pipeline {
                     GIT_SHORT=$(git rev-parse --short HEAD)
 
                     docker build \
-                      -t ${IMAGE_NAME}:${BUILD_NUMBER} \
-                      -t ${IMAGE_NAME}:${GIT_SHORT} \
-                      .
+                    -t ${IMAGE_NAME}:${BUILD_NUMBER} \
+                    -t ${IMAGE_NAME}:${GIT_SHORT} \
+                    .
+                '''
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                sh '''
+                    docker run --rm \
+                    devops-demo:${BUILD_NUMBER} \
+                    pytest tests -v
                 '''
             }
         }
@@ -62,9 +72,9 @@ pipeline {
                     trap cleanup EXIT
 
                     docker run -d \
-                      --name devops-demo-test \
-                      -p 18080:8080 \
-                      devops-demo:${BUILD_NUMBER}
+                    --name devops-demo-test \
+                    -p 18080:8080 \
+                    devops-demo:${BUILD_NUMBER}
 
                     sleep 3
 
@@ -72,7 +82,6 @@ pipeline {
                 '''
             }
         }
-    }
 
     post {
         success {
