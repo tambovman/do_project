@@ -1,0 +1,25 @@
+machines:
+  jenkins:
+    hostname: jenkins
+    ip: 192.168.57.10
+    username: devops
+
+  agent01:
+    hostname: agent01
+    ip: 192.168.57.11
+    username: devops
+
+  app01:
+    hostname: app01
+    ip: 192.168.57.20
+    username: devops
+    username: deploy
+
+  monitoring:
+    hostname: monitoring
+    ip: 192.168.57.30
+    username: devops
+
+jenkins:
+  url: http://192.168.57.10:8080
+  admin_user: jenkins-admin
