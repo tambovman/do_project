@@ -5,12 +5,9 @@ pipeline {
         stage('Environment') {
             steps {
                 sh '''
-                    echo "=== BUILD ENVIRONMENT ==="
                     echo "Hostname: $(hostname)"
                     echo "User: $(whoami)"
                     echo "Workspace: $(pwd)"
-                    echo "Build number: $BUILD_NUMBER"
-                    echo "Job name: $JOB_NAME"
                 '''
             }
         }
@@ -20,6 +17,17 @@ pipeline {
                 sh '''
                     java -version
                     git --version
+                    docker --version
+                '''
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh '''
+                    docker build \
+                      -t devops-demo:${BUILD_NUMBER} \
+                      .
                 '''
             }
         }
