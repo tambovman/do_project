@@ -25,9 +25,21 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh '''
+                    IMAGE_NAME=devops-demo
+                    GIT_SHORT=$(git rev-parse --short HEAD)
+
                     docker build \
-                      -t devops-demo:${BUILD_NUMBER} \
-                      .
+                    -t ${IMAGE_NAME}:${BUILD_NUMBER} \
+                    -t ${IMAGE_NAME}:${GIT_SHORT} \
+                    .
+                '''
+            }
+        }
+
+        stage('Verify Image') {
+            steps {
+                sh '''
+                    docker images devops-demo
                 '''
             }
         }
