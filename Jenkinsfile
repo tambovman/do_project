@@ -82,6 +82,43 @@ pipeline {
                 '''
             }
         }
+
+        stage('Push Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKERHUB_USER',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        GIT_SHORT=$(git rev-parse --short HEAD)
+
+                        echo "$DOCKERHUB_TOKEN" | \
+                            docker login -u "$DOCKERHUB_USER" \
+                            --password-stdin
+
+                        docker tag \
+                            devops-demo:${BUILD_NUMBER} \
+                            ${DOCKERHUB_USER}/devops-demo:${BUILD_NUMBER}
+
+                        docker tag \
+                            devops-demo:${BUILD_NUMBER} \
+                            ${DOCKERHUB_USER}/devops-demo:${GIT_SHORT}
+
+                        docker push \
+                            ${DOCKERHUB_USER}/devops-demo:${BUILD_NUMBER}
+
+                        docker push \
+                            ${DOCKERHUB_USER}/devops-demo:${GIT_SHORT}
+
+                        docker logout
+                    '''
+                }
+            }
+        }
+
     }
 
     post {
