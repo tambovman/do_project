@@ -119,6 +119,28 @@ pipeline {
             }
         }
 
+        stage('Deploy to app01') {
+            steps {
+                sshagent(credentials: ['app01-deploy']) {
+                    sh '''
+                        GIT_SHORT=$(git rev-parse --short HEAD)
+
+                        ssh -o StrictHostKeyChecking=no deploy@192.168.57.20 \
+                        "/opt/devops-demo/deploy.sh tambovman/devops-demo:${GIT_SHORT}"
+                    '''
+                }
+            }
+        }
+
+        stage('Deployment Health Check') {
+            steps {
+                sh '''
+                    sleep 3
+                    curl -f http://192.168.57.20:8080/health
+                '''
+            }
+        }
+
     }
 
     post {
