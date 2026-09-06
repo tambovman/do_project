@@ -1,8 +1,9 @@
-deploy user on app01
+dedicated deploy user
 /opt/devops-demo/deploy.sh
 current-image / previous-image
-Jenkins Deploy to app01 stage
+Jenkins SSH deployment
 deployment health check
 controlled failure with FORCE_HEALTH_FAIL
-rollback test
-final successful deployment
+successful rollback test
+final healthy deployment
+Multibranch Pipeline setup and branch-trigger fix
