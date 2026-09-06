@@ -140,6 +140,11 @@ pipeline {
                 '''
             }
         }
+        stage('Test Failure Notification') {
+            steps {
+                sh 'exit 1'
+            }
+        }
 
     }
 
