@@ -1,0 +1,8 @@
+deploy user on app01
+/opt/devops-demo/deploy.sh
+current-image / previous-image
+Jenkins Deploy to app01 stage
+deployment health check
+controlled failure with FORCE_HEALTH_FAIL
+rollback test
+final successful deployment
