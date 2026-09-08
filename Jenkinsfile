@@ -143,6 +143,12 @@ pipeline {
 
     }
 
+        stage('Test Failure Notification') {
+            steps {
+                sh 'exit 1'
+            }
+        }
+
     post {
         success {
             echo 'Pipeline completed successfully'
