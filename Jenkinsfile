@@ -146,10 +146,46 @@ pipeline {
     post {
         success {
             echo 'Pipeline completed successfully'
+
+            emailext(
+                to: 'l42260195@gmail.com',
+                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    Job: ${env.JOB_NAME}
+                    Build: #${env.BUILD_NUMBER}
+                    Branch: ${env.BRANCH_NAME}
+                    Result: SUCCESS
+
+                    ${env.BUILD_URL}
+                """
+            )
+
+            slackSend(
+                channel: '#jenkins-notifications',
+                message: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | ${env.BUILD_URL}"
+            )
         }
 
         failure {
             echo 'Pipeline failed'
+
+            emailext(
+                to: 'l42260195@gmail.com',
+                subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    Job: ${env.JOB_NAME}
+                    Build: #${env.BUILD_NUMBER}
+                    Branch: ${env.BRANCH_NAME}
+                    Result: FAILURE
+
+                    ${env.BUILD_URL}
+                """
+            )
+
+            slackSend(
+                channel: '#jenkins-notifications',
+                message: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | ${env.BUILD_URL}"
+            )
         }
     }
 }
