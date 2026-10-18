@@ -1,0 +1,35 @@
+---
+- name: Prepare application host
+  hosts: app
+  become: true
+
+  tasks:
+    - name: Create application directory
+      ansible.builtin.file:
+        path: /opt/devops-demo
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0755"
+
+    - name: Create application config directory
+      ansible.builtin.file:
+        path: /opt/devops-demo/config
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0755"
+
+    - name: Create application data directory
+      ansible.builtin.file:
+        path: /opt/devops-demo/data
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0755"
+
+    - name: Ensure Docker service is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true

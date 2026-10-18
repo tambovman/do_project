@@ -1,0 +1,77 @@
+---
+- name: Install Node Exporter on all lab hosts
+  hosts: all
+  become: true
+
+  vars:
+    node_exporter_version: "1.9.1"
+
+  tasks:
+    - name: Remove old Ubuntu Node Exporter package
+      ansible.builtin.apt:
+        name: prometheus-node-exporter
+        state: absent
+
+    - name: Create node_exporter user
+      ansible.builtin.user:
+        name: node_exporter
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Download Node Exporter archive
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+        mode: "0644"
+
+    - name: Extract Node Exporter
+      ansible.builtin.unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp
+        remote_src: true
+        creates: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
+
+    - name: Install Node Exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create Node Exporter systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - Restart node_exporter
+
+    - name: Ensure Node Exporter is enabled and running
+      ansible.builtin.systemd:
+        name: node_exporter
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+        daemon_reload: true
