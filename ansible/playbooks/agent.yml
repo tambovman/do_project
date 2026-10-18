@@ -1,0 +1,22 @@
+---
+- name: Prepare Jenkins agent
+  hosts: agents
+  become: true
+
+  tasks:
+    - name: Install Jenkins agent prerequisites
+      ansible.builtin.apt:
+        name:
+          - openjdk-21-jre
+          - git
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Create Jenkins agent working directory
+      ansible.builtin.file:
+        path: /opt/jenkins-agent
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0755"
