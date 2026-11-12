@@ -1,0 +1,34 @@
+---
+- name: Verify AWS EC2 configuration
+  hosts: aws_app
+  gather_facts: true
+
+  tasks:
+    - name: Show operating system
+      ansible.builtin.debug:
+        msg: "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+    - name: Show available memory
+      ansible.builtin.debug:
+        msg: "Available memory: {{ ansible_facts['memfree_mb'] }} MB"
+
+    - name: Check Docker version
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Display Docker version
+      ansible.builtin.debug:
+        var: docker_version.stdout
+
+    - name: Check application health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/health
+        method: GET
+        return_content: true
+        status_code: 200
+      register: app_health
+
+    - name: Display application health
+      ansible.builtin.debug:
+        var: app_health.json

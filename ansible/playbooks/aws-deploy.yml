@@ -1,0 +1,127 @@
+---
+- name: Deploy DevOps Demo application to AWS
+  hosts: aws_app
+  become: true
+
+  vars:
+    app_name: devops-demo
+    app_image: tambovman/devops-demo:4d5a046
+
+  tasks:
+    - name: Check application image exists locally
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - "{{ app_image }}"
+      register: image_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Stop when image is missing
+      ansible.builtin.fail:
+        msg: "Docker image {{ app_image }} is missing on AWS EC2."
+      when: image_check.rc != 0
+    - name: Inspect existing application container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - "{{ app_name }}"
+          - --format
+          - "{{ '{{' }}json .{{ '}}' }}"
+      register: container_inspect
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Debug container inspection result
+      ansible.builtin.debug:
+        msg:
+          - "Return code: {{ container_inspect.rc | default('undefined') }}"
+          - "Output length: {{ container_inspect.stdout | default('') | length }}"
+          - "Error: {{ container_inspect.stderr | default('') }}"
+
+    - name: Parse container configuration
+      ansible.builtin.set_fact:
+        current_container: "{{ container_inspect.stdout | from_json }}"
+      when:
+        - container_inspect.rc == 0
+        - container_inspect.stdout | default('') | trim | length > 0
+
+    - name: Determine whether container needs replacement
+      ansible.builtin.set_fact:
+        replace_container: >-
+          {{
+            container_inspect.rc != 0
+            or (current_container.Config.Image | default('')) != app_image
+            or (current_container.HostConfig.RestartPolicy.Name | default('')) != 'unless-stopped'
+            or (current_container.HostConfig.PortBindings['8080/tcp'][0].HostIp | default('')) != '127.0.0.1'
+            or (current_container.HostConfig.PortBindings['8080/tcp'][0].HostPort | default('')) != '8080'
+          }}
+
+    - name: Display deployment decision
+      ansible.builtin.debug:
+        msg:
+          - "Replacement required: {{ replace_container }}"
+          - "Current image: {{ current_container.Config.Image | default('unknown') }}"
+          - "Restart policy: {{ current_container.HostConfig.RestartPolicy.Name | default('unknown') }}"
+
+    - name: Remove existing container if configuration differs
+      ansible.builtin.command:
+        argv:
+          - docker
+          - rm
+          - -f
+          - "{{ app_name }}"
+      when:
+        - replace_container
+        - not ansible_check_mode
+        - container_inspect.rc == 0
+        - not ansible_check_mode
+
+    - name: Create application container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - -d
+          - --name
+          - "{{ app_name }}"
+          - --restart
+          - unless-stopped
+          - -p
+          - "127.0.0.1:8080:8080"
+          - "{{ app_image }}"
+      when: replace_container
+
+    - name: Ensure application container is running
+      ansible.builtin.command:
+        argv:
+          - docker
+          - start
+          - "{{ app_name }}"
+      when:
+        - not replace_container
+        - not (current_container.State.Running | default(false))
+        - not ansible_check_mode
+
+    - name: Verify application health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/health
+        status_code: 200
+        return_content: true
+      check_mode: false
+      register: health
+      retries: 5
+      delay: 2
+      until: health.status == 200
+
+    - name: Display application health
+      ansible.builtin.debug:
+        var: health.json
+      when:
+        - health is defined
+        - health.json is defined
