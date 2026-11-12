@@ -12,3 +12,17 @@ output "resource_prefix" {
   description = "Prefix for naming AWS resources"
   value       = "${var.project_name}-${var.environment}"
 }
+output "ec2_instance_id" {
+  description = "EC2 instance ID"
+  value       = aws_instance.app.id
+}
+
+output "ec2_public_ip" {
+  description = "Public IPv4 address of the EC2 instance"
+  value       = aws_instance.app.public_ip
+}
+
+output "ec2_private_ip" {
+  description = "Private IPv4 address of the EC2 instance"
+  value       = aws_instance.app.private_ip
+}
