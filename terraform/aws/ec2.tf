@@ -9,6 +9,7 @@ resource "aws_instance" "app" {
   vpc_security_group_ids      = [aws_security_group.app.id]
   key_name                    = "devops-aws-lab"
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.ec2_ecr.name
 
   root_block_device {
     volume_size           = 10
