@@ -1,3 +1,4 @@
+
 ---
 - name: Deploy DevOps Demo application to AWS
   hosts: aws_app
@@ -5,9 +6,13 @@
 
   vars:
     app_name: devops-demo
-    app_image: tambovman/devops-demo:4d5a046
+    app_image: "992382477584.dkr.ecr.us-east-1.amazonaws.com/devops-demo:manual-test-001"
 
   tasks:
+    # --------------------------------------------------
+    # 1. Check desired Docker image
+    # --------------------------------------------------
+
     - name: Check application image exists locally
       ansible.builtin.command:
         argv:
@@ -24,80 +29,220 @@
       ansible.builtin.fail:
         msg: "Docker image {{ app_image }} is missing on AWS EC2."
       when: image_check.rc != 0
+
+    - name: Get desired Docker image ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - "{{ app_image }}"
+          - --format
+          - "{{ '{{' }}.Id{{ '}}' }}"
+      register: desired_image
+      changed_when: false
+      check_mode: false
+
+    # --------------------------------------------------
+    # 2. Inspect current application
+    # --------------------------------------------------
+
     - name: Inspect existing application container
       ansible.builtin.command:
         argv:
           - docker
           - inspect
           - "{{ app_name }}"
-          - --format
-          - "{{ '{{' }}json .{{ '}}' }}"
       register: container_inspect
       changed_when: false
       failed_when: false
       check_mode: false
 
-    - name: Debug container inspection result
-      ansible.builtin.debug:
-        msg:
-          - "Return code: {{ container_inspect.rc | default('undefined') }}"
-          - "Output length: {{ container_inspect.stdout | default('') | length }}"
-          - "Error: {{ container_inspect.stderr | default('') }}"
-
-    - name: Parse container configuration
+    - name: Parse existing container configuration
       ansible.builtin.set_fact:
-        current_container: "{{ container_inspect.stdout | from_json }}"
-      when:
-        - container_inspect.rc == 0
-        - container_inspect.stdout | default('') | trim | length > 0
+        current_container: "{{ (container_inspect.stdout | from_json)[0] }}"
+      when: container_inspect.rc == 0
 
-    - name: Determine whether container needs replacement
+    - name: Determine whether replacement is required
       ansible.builtin.set_fact:
         replace_container: >-
           {{
             container_inspect.rc != 0
-            or (current_container.Config.Image | default('')) != app_image
-            or (current_container.HostConfig.RestartPolicy.Name | default('')) != 'unless-stopped'
-            or (current_container.HostConfig.PortBindings['8080/tcp'][0].HostIp | default('')) != '127.0.0.1'
-            or (current_container.HostConfig.PortBindings['8080/tcp'][0].HostPort | default('')) != '8080'
+            or (current_container | default({})).get('Image', '') != desired_image.stdout
+            or (current_container | default({})).get('Config', {}).get('Image', '') != app_image
+            or (current_container | default({})).get('HostConfig', {}).get('RestartPolicy', {}).get('Name', '') != 'unless-stopped'
+            or (
+              (current_container | default({})).get('HostConfig', {}).get('PortBindings', {}).get('8080/tcp', [{}])[0].get('HostIp', '')
+            ) != '127.0.0.1'
+            or (
+              (current_container | default({})).get('HostConfig', {}).get('PortBindings', {}).get('8080/tcp', [{}])[0].get('HostPort', '')
+            ) != '8080'
           }}
 
     - name: Display deployment decision
       ansible.builtin.debug:
         msg:
           - "Replacement required: {{ replace_container }}"
-          - "Current image: {{ current_container.Config.Image | default('unknown') }}"
-          - "Restart policy: {{ current_container.HostConfig.RestartPolicy.Name | default('unknown') }}"
+          - "Desired image: {{ app_image }}"
+          - "Current image: {{ (current_container | default({})).get('Config', {}).get('Image', 'none') }}"
 
-    - name: Remove existing container if configuration differs
+    # --------------------------------------------------
+    # 3. Pre-deployment safety checks
+    # --------------------------------------------------
+
+    - name: Check for existing backup before deployment
       ansible.builtin.command:
         argv:
           - docker
-          - rm
-          - -f
-          - "{{ app_name }}"
+          - container
+          - inspect
+          - "{{ app_name }}-backup"
+      register: backup_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
       when:
         - replace_container
         - not ansible_check_mode
-        - container_inspect.rc == 0
+
+    - name: Refuse deployment if backup already exists
+      ansible.builtin.assert:
+        that:
+          - backup_check.rc != 0
+        fail_msg: "Backup already exists. Investigate before deploying."
+      when:
+        - replace_container
         - not ansible_check_mode
 
-    - name: Create application container
-      ansible.builtin.command:
-        argv:
-          - docker
-          - run
-          - -d
-          - --name
-          - "{{ app_name }}"
-          - --restart
-          - unless-stopped
-          - -p
-          - "127.0.0.1:8080:8080"
-          - "{{ app_image }}"
-      when: replace_container
+    # --------------------------------------------------
+    # 4. Deployment with rollback protection
+    # --------------------------------------------------
 
-    - name: Ensure application container is running
+    - name: Deploy new application with rollback protection
+      when:
+        - replace_container
+        - not ansible_check_mode
+      block:
+
+        - name: Stop existing application
+          ansible.builtin.command:
+            argv:
+              - docker
+              - stop
+              - "{{ app_name }}"
+          when: container_inspect.rc == 0
+
+        - name: Preserve existing application container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - rename
+              - "{{ app_name }}"
+              - "{{ app_name }}-backup"
+          when: container_inspect.rc == 0
+
+        - name: Start new ECR application container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - -d
+              - --name
+              - "{{ app_name }}"
+              - --restart
+              - unless-stopped
+              - -p
+              - "127.0.0.1:8080:8080"
+              - "{{ app_image }}"
+
+        - name: Verify new application health
+          ansible.builtin.uri:
+            url: http://127.0.0.1:8080/health
+            status_code: 200
+            return_content: true
+          register: new_health
+          retries: 10
+          delay: 3
+          until:
+            - new_health.status | default(0) == 200
+            - new_health.json.status | default('') == 'healthy'
+
+      rescue:
+
+        - name: Check whether rollback container exists
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - "{{ app_name }}-backup"
+          register: rollback_check
+          changed_when: false
+          failed_when: false
+
+        - name: Remove failed replacement container
+          ansible.builtin.command:
+            argv:
+              - docker
+              - rm
+              - -f
+              - "{{ app_name }}"
+          when:
+            - rollback_check.rc == 0 or container_inspect.rc != 0
+          failed_when: false
+
+        - name: Restore previous application
+          when: rollback_check.rc == 0
+          block:
+
+            - name: Rename backup to original name
+              ansible.builtin.command:
+                argv:
+                  - docker
+                  - rename
+                  - "{{ app_name }}-backup"
+                  - "{{ app_name }}"
+
+            - name: Restart previous application
+              ansible.builtin.command:
+                argv:
+                  - docker
+                  - start
+                  - "{{ app_name }}"
+
+        - name: Ensure original container is running if backup was not created
+          ansible.builtin.command:
+            argv:
+              - docker
+              - start
+              - "{{ app_name }}"
+          when:
+            - rollback_check.rc != 0
+            - container_inspect.rc == 0
+          failed_when: false
+
+        - name: Verify rollback application health
+          ansible.builtin.uri:
+            url: http://127.0.0.1:8080/health
+            status_code: 200
+            return_content: true
+          register: rollback_health
+          retries: 10
+          delay: 3
+          until:
+            - rollback_health.status | default(0) == 200
+            - rollback_health.json.status | default('') == 'healthy'
+          when: container_inspect.rc == 0
+
+        - name: Report deployment failure
+          ansible.builtin.fail:
+            msg: "ECR deployment failed. Rollback was attempted. Review previous tasks."
+
+    # --------------------------------------------------
+    # 5. Ensure existing application is running
+    # --------------------------------------------------
+
+    - name: Ensure unchanged application container is running
       ansible.builtin.command:
         argv:
           - docker
@@ -105,19 +250,26 @@
           - "{{ app_name }}"
       when:
         - not replace_container
-        - not (current_container.State.Running | default(false))
+        - not (current_container | default({})).get('State', {}).get('Running', false)
         - not ansible_check_mode
 
-    - name: Verify application health
+    # --------------------------------------------------
+    # 6. Verify active application
+    # --------------------------------------------------
+
+    - name: Verify active application health
       ansible.builtin.uri:
         url: http://127.0.0.1:8080/health
         status_code: 200
         return_content: true
-      check_mode: false
       register: health
       retries: 5
       delay: 2
-      until: health.status == 200
+      until:
+        - health.status | default(0) == 200
+        - health.json.status | default('') == 'healthy'
+      when:
+        - not ansible_check_mode or not replace_container
 
     - name: Display application health
       ansible.builtin.debug:
@@ -125,3 +277,18 @@
       when:
         - health is defined
         - health.json is defined
+
+    # --------------------------------------------------
+    # 7. Cleanup after successful deployment
+    # --------------------------------------------------
+
+    - name: Remove backup after successful deployment
+      ansible.builtin.command:
+        argv:
+          - docker
+          - rm
+          - "{{ app_name }}-backup"
+      when:
+        - replace_container
+        - not ansible_check_mode
+        - container_inspect.rc == 0
